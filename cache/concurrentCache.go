@@ -1,7 +1,7 @@
-package main
+package cache
 
 import (
-	"MicroCache/LRU"
+	"MicroCache/cache/LRU"
 	"sync"
 )
 

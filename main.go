@@ -1,26 +1,30 @@
 package main
 
 import (
+	"MicroCache/cache"
 	"fmt"
-	"sync"
-	"time"
+	"log"
+	"net/http"
 )
 
-var m sync.Mutex
-var set = make(map[int]bool, 0)
-
-func printOnce(num int) {
-	m.Lock()
-	if _, exist := set[num]; !exist {
-		fmt.Println(num)
-	}
-	set[num] = true
-	m.Unlock()
+var db = map[string]string{
+	"Tom":  "630",
+	"Jack": "589",
+	"Sam":  "567",
 }
 
 func main() {
-	for i := 0; i < 10; i++ {
-		go printOnce(100)
-	}
-	time.Sleep(time.Second)
+	cache.NewCacheGroup("scores", 2<<10, cache.GetterFunc(
+		func(key string) ([]byte, error) {
+			log.Println("[MapDB] search key", key)
+			if v, ok := db[key]; ok {
+				return []byte(v), nil
+			}
+			return nil, fmt.Errorf("%s not exist", key)
+		}))
+
+	selfAddress := "localhost:9999"
+	pool := cache.NewHTTPPool(selfAddress)
+	log.Println("microCache is running at", selfAddress)
+	log.Fatal(http.ListenAndServe(selfAddress, pool))
 }

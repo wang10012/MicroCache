@@ -1,4 +1,4 @@
-package main
+package cache
 
 // OnlyReadBytes 存储真实的缓存值 缓存值的抽象与封装
 // byte类型可以支持任意的数据类型的存储，例如字符串、图片。
