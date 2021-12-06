@@ -1,14 +1,14 @@
 package cache
 
 import (
-	"MicroCache/cache/LRU"
+	"MicroCache/cache/lru"
 	"sync"
 )
 
 // concurrentCache 控制并发
 type concurrentCache struct {
 	mutex      sync.Mutex
-	lru        *LRU.Cache
+	lru        *lru.Cache
 	cacheBytes int64
 }
 
@@ -17,7 +17,7 @@ func (c *concurrentCache) add(key string, value OnlyReadBytes) {
 	defer c.mutex.Unlock()
 	// Lazy Initialization 第一次使用的时候再初始化，提高性能
 	if c.lru == nil {
-		c.lru = LRU.NewCache(c.cacheBytes, nil)
+		c.lru = lru.NewCache(c.cacheBytes, nil)
 	}
 	c.lru.Add(key, value)
 }

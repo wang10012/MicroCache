@@ -1,6 +1,7 @@
 package cache
 
 import (
+	singlefilght "MicroCache/cache/singleflight"
 	"fmt"
 	"log"
 	"sync"
@@ -23,6 +24,9 @@ type cacheGroup struct {
 	name     string
 	getter   Getter
 	conCache concurrentCache
+	peers    PeerPicker
+	// singleflight:Prevents cache breakdown
+	caller *singlefilght.Group
 }
 
 var (
@@ -41,6 +45,7 @@ func NewCacheGroup(name string, cacheBytes int64, getter Getter) *cacheGroup {
 		name:     name,
 		getter:   getter,
 		conCache: concurrentCache{cacheBytes: cacheBytes},
+		caller:   &singlefilght.Group{},
 	}
 	cacheGroups[name] = group
 	return group
@@ -73,11 +78,28 @@ func (group *cacheGroup) Get(key string) (OnlyReadBytes, error) {
 }
 
 // 1. 单机并发的场景下，调用getFromLocal
+// 2. 现在添加分布式节点场景下的逻辑
+// 调用 PickPeer() 方法选择节点，若非本机节点，则调用 getFromPeer() 从远程获取。若是本机节点或失败，则回退到 调用 getFromLocal()。
 func (group *cacheGroup) load(key string) (value OnlyReadBytes, err error) {
-	return group.getFromLocal(key)
+	val, err := group.caller.Do(key, func() (interface{}, error) {
+		if group.peers != nil {
+			if peer, ok := group.peers.PickPeer(key); ok {
+				if value, err = group.getFromPeer(peer, key); err == nil {
+					return value, nil
+				}
+				log.Println("[Cache] Failed to get from peer", err)
+			}
+		}
+
+		return group.getFromLocal(key)
+	})
+	if err == nil {
+		return val.(OnlyReadBytes), err
+	}
+	return
 }
 
-// 单机并发场景下，从各种数据源中加载数据到缓存
+// 从各种数据源中加载数据到缓存
 func (group *cacheGroup) getFromLocal(key string) (OnlyReadBytes, error) {
 	// 对于不同的数据源，get函数不同
 	bytes, err := group.getter.Get(key)
@@ -92,4 +114,21 @@ func (group *cacheGroup) getFromLocal(key string) (OnlyReadBytes, error) {
 // 加载到缓存
 func (group *cacheGroup) loadIntoCache(key string, value OnlyReadBytes) {
 	group.conCache.add(key, value)
+}
+
+// RegisterPeers 注册一个 PeerPicker 来挑选远程节点
+func (group *cacheGroup) RegisterPeers(peers PeerPicker) {
+	if group.peers != nil {
+		panic("RegisterPeerPicker called more than once")
+	}
+	group.peers = peers
+}
+
+// getFromPeer
+func (group *cacheGroup) getFromPeer(peer PeerGetter, key string) (OnlyReadBytes, error) {
+	bytes, err := peer.Get(group.name, key)
+	if err != nil {
+		return OnlyReadBytes{}, err
+	}
+	return OnlyReadBytes{b: bytes}, nil
 }
